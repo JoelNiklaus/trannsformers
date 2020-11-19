@@ -2,7 +2,7 @@ import os
 import random
 import fire
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"  # do this to remove gpu with full memory (MUST be before torch import)
+os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3"  # do this to remove gpu with full memory (MUST be before torch import)
 os.environ["TOKENIZERS_PARALLELISM"] = "true"  # used for disabling warning (BUT: if deadlock occurs, remove this)
 
 from transformers import EvaluationStrategy, AutoModelForSequenceClassification, AutoTokenizer
@@ -16,12 +16,13 @@ from pprint import pprint
 
 
 def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joelito/sem_eval_2010_task_8",
-        do_train=False, do_eval=False, do_predict=True, test_set_sub_size=None, seed=42):
+        num_train_epochs=10, do_train=False, do_eval=False, do_predict=True, test_set_sub_size=None, seed=42):
     """
     Runs the specified transformer model
     :param base_model:             the name of the base model from huggingface transformers (e.g. roberta-base)
     :param fine_tuned_checkpoint_name:  the name of the fine tuned checkpoint (e.g. checkpoint-500)
     :param dataset:                the name of the dataset from huggingface datasets (e.g. joelito/sem_eval_2010_task_8)
+    :param num_train_epochs:            number of epochs to train for
     :param do_train:                    whether to train the model
     :param do_eval:                     whether to evaluate the model in the end
     :param do_predict:                  whether to do predictions on the test set in the end
@@ -36,14 +37,14 @@ def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joe
     make_reproducible(seed)
     training_args = TrainingArguments(
         output_dir=f'{local_model_name}/results',  # output directory
-        num_train_epochs=10,  # total number of training epochs
-        per_device_train_batch_size=10,  # batch size per device during training
-        per_device_eval_batch_size=10,  # batch size for evaluation
+        num_train_epochs=num_train_epochs,  # total number of training epochs
+        per_device_train_batch_size=6,  # batch size per device during training
+        per_device_eval_batch_size=6,  # batch size for evaluation
         warmup_steps=500,  # number of warmup steps for learning rate scheduler
         weight_decay=0.01,  # strength of weight decay
         logging_dir=f'{local_model_name}/logs',  # directory for storing logs
         logging_steps=10,
-        save_steps=100,
+        save_steps=500,
         eval_steps=100,
         evaluation_strategy=EvaluationStrategy.STEPS,
         seed=seed,
@@ -101,7 +102,8 @@ def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joe
             # IMPORTANT: This command somehow may delete some features in the dataset!
             dataset['test'] = dataset['test'].select(indices=range(test_set_sub_size))
 
-        sentences = dataset['test'][0:-1]['sentence'] # save sentences because they will be removed by trainer.predict()
+        # save sentences because they will be removed by trainer.predict()
+        sentences = dataset['test'][0:-1]['sentence']
 
         predictions, label_ids, metrics = trainer.predict(dataset['test'])
         print(metrics)
