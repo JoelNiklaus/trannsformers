@@ -51,36 +51,35 @@ def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joe
     )
 
     print("Loading Dataset")
-    dataset = load_dataset(dataset)
-    num_labels = dataset['train'].features['relation'].num_classes
+    data = load_dataset(dataset)
 
-    idx_to_labels_list = dataset['train'].features['relation'].names  # list to look up the label indices
+    idx_to_labels_list = data['train'].features['relation'].names  # list to look up the label indices
     id2label = {k: v for k, v in enumerate(idx_to_labels_list)}
     label2id = {v: k for k, v in enumerate(idx_to_labels_list)}
 
     model_path = base_model
     if fine_tuned_checkpoint_name:
-        model_path = f"{local_model_name}/{training_args.output_dir}/{fine_tuned_checkpoint_name}"
+        model_path = f"{training_args.output_dir}/{fine_tuned_checkpoint_name}"
 
     print("Loading Model")
     model = AutoModelForSequenceClassification.from_pretrained(model_path, id2label=id2label, label2id=label2id,
-                                                               num_labels=num_labels)
+                                                               finetuning_task=dataset)
     print("Loading Tokenizer")
     tokenizer = AutoTokenizer.from_pretrained(model_path)
 
     print("Tokenizing Dataset")
-    supervised_keys = dataset['train'].supervised_keys  # 'sentence' and 'relation'
-    dataset = dataset.map(lambda ex: tokenizer(ex[supervised_keys.input], truncation=True, padding='max_length'),
-                          batched=True)
-    dataset.rename_column_(original_column_name=supervised_keys.output,
-                           new_column_name='label')  # IMPORTANT: otherwise the loss cannot be computed
-    dataset.set_format(type='pt', columns=['input_ids', 'attention_mask', 'label'], output_all_columns=True)
+    supervised_keys = data['train'].supervised_keys  # 'sentence' and 'relation'
+    data = data.map(lambda ex: tokenizer(ex[supervised_keys.input], truncation=True, padding='max_length'),
+                    batched=True)
+    data.rename_column_(original_column_name=supervised_keys.output,
+                        new_column_name='label')  # IMPORTANT: otherwise the loss cannot be computed
+    data.set_format(type='pt', columns=['input_ids', 'attention_mask', 'label'], output_all_columns=True)
 
     trainer = Trainer(
         model=model,  # the instantiated 🤗 Transformers model to be trained
         args=training_args,  # training arguments, defined above
-        train_dataset=dataset['train'],  # training dataset
-        eval_dataset=dataset['validation'],  # evaluation dataset
+        train_dataset=data['train'],  # training dataset
+        eval_dataset=data['validation'],  # evaluation dataset
         compute_metrics=compute_metrics,  # additional metrics to the loss
     )
 
@@ -100,12 +99,12 @@ def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joe
         print(f"Predicting on test set")
         if test_set_sub_size:
             # IMPORTANT: This command somehow may delete some features in the dataset!
-            dataset['test'] = dataset['test'].select(indices=range(test_set_sub_size))
+            data['test'] = data['test'].select(indices=range(test_set_sub_size))
 
         # save sentences because they will be removed by trainer.predict()
-        sentences = dataset['test'][0:-1]['sentence']
+        sentences = data['test'][0:-1]['sentence']
 
-        predictions, label_ids, metrics = trainer.predict(dataset['test'])
+        predictions, label_ids, metrics = trainer.predict(data['test'])
         print(metrics)
 
         prediction_ids = get_prediction_ids(predictions)  # get ids of predictions
@@ -113,12 +112,11 @@ def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joe
                             prediction_ids]  # get labels of predictions
         correct_labels = [idx_to_labels_list[label_id] for label_id in label_ids]  # get labels of ground truth
 
-        examples = random.sample(range(dataset['test'].num_rows), 5)  # look at five random examples from the dataset
+        examples = random.sample(range(data['test'].num_rows), 5)  # look at five random examples from the dataset
         for i in examples:
             print(f"\nSentence: {sentences[i]}")
             print(f"Predicted Relation: {predicted_labels[i]}")
             print(f"Ground Truth Relation: {correct_labels[i]}")
-
 
 if __name__ == '__main__':
     fire.Fire(run)
