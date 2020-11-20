@@ -1,6 +1,7 @@
 import os
 import random
 import fire
+import wandb
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3"  # do this to remove gpu with full memory (MUST be before torch import)
 os.environ["TOKENIZERS_PARALLELISM"] = "true"  # used for disabling warning (BUT: if deadlock occurs, remove this)
@@ -38,6 +39,7 @@ def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joe
     training_args = TrainingArguments(
         output_dir=f'{local_model_name}/results',  # output directory
         num_train_epochs=num_train_epochs,  # total number of training epochs
+        max_steps=-1,  # Set to a small positive number to test models (training is short)
         per_device_train_batch_size=6,  # batch size per device during training
         per_device_eval_batch_size=6,  # batch size for evaluation
         warmup_steps=500,  # number of warmup steps for learning rate scheduler
@@ -48,6 +50,10 @@ def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joe
         eval_steps=100,
         evaluation_strategy=EvaluationStrategy.STEPS,
         seed=seed,
+        run_name=base_model,  # used for wandb
+        load_best_model_at_end=True,
+        metric_for_best_model="f1",
+        greater_is_better=True,
     )
 
     print("Loading Dataset")
@@ -86,9 +92,12 @@ def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joe
     if do_train:
         print("Training on train set")
         trainer.train()
+
+        trainer.save_model(training_args.output_dir)
         # For convenience, we also re-save the tokenizer to the same directory,
-        if trainer.is_world_master():
+        if trainer.is_world_process_zero():
             tokenizer.save_pretrained(training_args.output_dir)
+
 
     if do_eval:
         print("Evaluating on validation set")
@@ -105,7 +114,13 @@ def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joe
         sentences = data['test'][0:-1]['sentence']
 
         predictions, label_ids, metrics = trainer.predict(data['test'])
-        print(metrics)
+        # rename metrics entries to test_{} for wandb
+        test_metrics = {}
+        for old_key in metrics:
+            new_key = old_key.replace("eval_", "test/")
+            test_metrics[new_key] = metrics[old_key]
+        print(test_metrics)
+        wandb.log(test_metrics)
 
         prediction_ids = get_prediction_ids(predictions)  # get ids of predictions
         predicted_labels = [idx_to_labels_list[prediction_id] for prediction_id in
@@ -117,6 +132,7 @@ def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joe
             print(f"\nSentence: {sentences[i]}")
             print(f"Predicted Relation: {predicted_labels[i]}")
             print(f"Ground Truth Relation: {correct_labels[i]}")
+
 
 if __name__ == '__main__':
     fire.Fire(run)
