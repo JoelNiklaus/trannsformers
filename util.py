@@ -22,7 +22,7 @@ def make_reproducible(seed=42):
     random.seed(seed)
 
 
-def compute_metrics(pred, f1_average='micro'):
+def compute_metrics(pred, f1_average='weighted'):
     """ Defining additional metrics to be computed """
     labels = pred.label_ids
     predictions = pred.predictions.argmax(-1)
