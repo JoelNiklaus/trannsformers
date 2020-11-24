@@ -71,7 +71,7 @@ def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joe
     model = AutoModelForSequenceClassification.from_pretrained(model_path, id2label=id2label, label2id=label2id,
                                                                finetuning_task=dataset)
     print("Loading Tokenizer")
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    tokenizer = AutoTokenizer.from_pretrained(base_model)
 
     print("Tokenizing Dataset")
     supervised_keys = data['train'].supervised_keys  # 'sentence' and 'relation'
@@ -98,7 +98,6 @@ def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joe
         if trainer.is_world_process_zero():
             tokenizer.save_pretrained(training_args.output_dir)
 
-
     if do_eval:
         print("Evaluating on validation set")
         metrics = trainer.evaluate()
@@ -111,7 +110,7 @@ def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joe
             data['test'] = data['test'].select(indices=range(test_set_sub_size))
 
         # save sentences because they will be removed by trainer.predict()
-        sentences = data['test'][0:-1]['sentence']
+        sentences = data['test'][:]['sentence']
 
         predictions, label_ids, metrics = trainer.predict(data['test'])
         # rename metrics entries to test_{} for wandb
@@ -120,7 +119,8 @@ def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joe
             new_key = old_key.replace("eval_", "test/")
             test_metrics[new_key] = metrics[old_key]
         print(test_metrics)
-        wandb.log(test_metrics)
+        if do_train:  # only log when we trained just before
+            wandb.log(test_metrics)
 
         prediction_ids = get_prediction_ids(predictions)  # get ids of predictions
         predicted_labels = [idx_to_labels_list[prediction_id] for prediction_id in
@@ -129,9 +129,10 @@ def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joe
 
         examples = random.sample(range(data['test'].num_rows), 5)  # look at five random examples from the dataset
         for i in examples:
-            print(f"\nSentence: {sentences[i]}")
-            print(f"Predicted Relation: {predicted_labels[i]}")
-            print(f"Ground Truth Relation: {correct_labels[i]}")
+            print()  # ljust is used to align them nicely by adding padding to the right
+            print("Sentence".ljust(25), sentences[i])
+            print("Predicted Relation".ljust(25), predicted_labels[i])
+            print("Actual Relation".ljust(25), correct_labels[i])
 
 
 if __name__ == '__main__':
