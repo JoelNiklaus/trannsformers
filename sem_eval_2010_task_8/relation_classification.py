@@ -9,7 +9,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "true"  # used for disabling warning (BUT
 from transformers import EvaluationStrategy, AutoModelForSequenceClassification, AutoTokenizer
 from transformers import Trainer, TrainingArguments
 
-from datasets import load_dataset
+from datasets import load_dataset, DatasetDict
 
 from util import make_reproducible, compute_metrics, get_prediction_ids
 
@@ -58,6 +58,11 @@ def run(base_model="roberta-base", fine_tuned_checkpoint_name=None, dataset="joe
 
     print("Loading Dataset")
     data = load_dataset(dataset)
+    train_dev = data['train'].train_test_split(test_size=0.1, seed=seed) # size of validation set
+    data = DatasetDict({
+        "train": train_dev["train"],
+        "test": data["test"],
+        "validation": train_dev["test"]})
 
     idx_to_labels_list = data['train'].features['relation'].names  # list to look up the label indices
     id2label = {k: v for k, v in enumerate(idx_to_labels_list)}
