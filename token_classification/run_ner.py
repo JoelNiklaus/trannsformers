@@ -23,8 +23,9 @@ import logging
 import os
 import sys
 from dataclasses import dataclass, field
-from pprint import pprint
 from typing import Optional
+
+import wandb
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"  # do this to remove gpu with full memory (MUST be before torch import)
 os.environ["TOKENIZERS_PARALLELISM"] = "true"  # used for disabling warning (BUT: if deadlock occurs, remove this)
@@ -379,6 +380,7 @@ def main():
 
         results = trainer.evaluate()
 
+        # Save results
         output_eval_file = os.path.join(training_args.output_dir, "eval_results_ner.txt")
         if trainer.is_world_process_zero():
             with open(output_eval_file, "w") as writer:
@@ -401,6 +403,17 @@ def main():
             for prediction, label in zip(predictions, labels)
         ]
 
+        # Log results to wandb
+        if trainer.is_world_master():
+            # rename metrics entries to test_{} for wandb
+            test_metrics = {}
+            for old_key in metrics:
+                new_key = old_key.replace("eval_", "test/")
+                test_metrics[new_key] = metrics[old_key]
+            if training_args.do_train:  # only log when we trained just before
+                wandb.log(test_metrics)
+
+        # Save results
         output_test_results_file = os.path.join(training_args.output_dir, "test_results.txt")
         if trainer.is_world_master():
             with open(output_test_results_file, "w") as writer:
