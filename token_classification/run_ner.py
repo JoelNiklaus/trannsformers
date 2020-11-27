@@ -94,6 +94,16 @@ class DataTrainingArguments:
         default=None,
         metadata={"help": "An optional input test data file to predict on (a csv or JSON file)."},
     )
+    validation_size: Optional[float] = field(
+        default=0.1,
+        metadata={"help": "An optional input validation size which splits off of the training set "
+                          "if no validation set is present."},
+    )
+    test_size: Optional[float] = field(
+        default=0.2,
+        metadata={"help": "An optional input test size which splits off of the training set "
+                          "if no test set is present."},
+    )
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
     )
@@ -200,6 +210,25 @@ def main():
         datasets = load_dataset(extension, data_files=data_files)
     # See more about loading any type of standard or custom dataset (from files, python dict, pandas DataFrame, etc) at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
+
+    # If the dataset contains no validation split, create one ourselves
+    if 'validation' not in datasets and training_args.do_eval:
+        train_dev = datasets['train'].train_test_split(test_size=data_args.validation_size)  # size of validation set
+        datasets['train'] = train_dev['train']
+        datasets['validation'] = train_dev['test']
+        logger.info(f"Split training set into training set "
+                    f"({1 - data_args.validation_size}: {datasets['train'].num_rows} rows) "
+                    f"and validation set "
+                    f"({data_args.validation_size}: {datasets['validation'].num_rows} rows).")
+    # If the dataset contains no test split, create one ourselves
+    if 'test' not in datasets and training_args.do_predict:
+        train_test = datasets['train'].train_test_split(test_size=data_args.test_size)  # size of test set
+        datasets['train'] = train_test['train']
+        datasets['test'] = train_test['test']
+        logger.info(f"Split training set into training set "
+                    f"({1 - data_args.test_size}: {datasets['train'].num_rows} rows) "
+                    f"and test set "
+                    f"({data_args.test_size}: {datasets['test'].num_rows} rows).")
 
     if training_args.do_train:
         column_names = datasets["train"].column_names
